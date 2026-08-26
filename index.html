@@ -6,37 +6,34 @@
 <title>GitHub Trending 每日归档</title>
 <style>
   :root {
-    --bg: #f6f8fa;
-    --card: #ffffff;
-    --text: #1f2328;
-    --muted: #6e7781;
-    --accent: #0969da;
-    --border: #d0d7de;
-    --lang: #8250df;
+    --bg: #f6f8fa; --card: #fff; --text: #1f2328; --muted: #6e7781;
+    --accent: #0969da; --border: #d0d7de; --lang: #8250df;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.5;
-    padding-bottom: 40px;
+    background: var(--bg); color: var(--text); line-height: 1.5; padding-bottom: 40px;
   }
   header {
-    position: sticky; top: 0;
-    background: var(--card);
-    border-bottom: 1px solid var(--border);
-    padding: 12px 16px;
-    z-index: 10;
+    position: sticky; top: 0; background: var(--card);
+    border-bottom: 1px solid var(--border); padding: 12px 16px; z-index: 10;
   }
   header h1 { font-size: 18px; font-weight: 700; }
-  .nav { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .nav { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
   .nav button {
-    border: 1px solid var(--border); background: var(--card);
-    border-radius: 6px; padding: 6px 12px; font-size: 14px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--card); border-radius: 6px;
+    padding: 6px 12px; font-size: 14px; cursor: pointer; flex: none;
   }
   .nav button:active { background: #eef1f4; }
-  .nav .date { font-weight: 600; font-size: 15px; margin: 0 auto; }
+  .nav input[type="date"] {
+    flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+    font-size: 15px; font-weight: 600; color: var(--text); background: var(--card); text-align: center;
+  }
+  .search { margin-top: 10px; }
+  .search input {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 15px;
+  }
   main { max-width: 640px; margin: 0 auto; padding: 12px; }
   .lang { margin-top: 20px; }
   .lang h2 {
@@ -44,34 +41,37 @@
     letter-spacing: .5px; margin-bottom: 8px;
   }
   .item {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
-    text-decoration: none; display: block; color: var(--text);
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8px; text-decoration: none; display: block; color: var(--text);
   }
   .item .repo { font-weight: 600; font-size: 15px; color: var(--accent); }
   .item .desc {
     font-size: 13px; color: var(--muted); margin-top: 2px;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  .loading, .error { text-align: center; color: var(--muted); padding: 40px 0; }
+  .empty, .loading, .error { text-align: center; color: var(--muted); padding: 40px 0; }
+  .count { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center; }
 </style>
 </head>
 <body>
 <header>
   <h1>GitHub Trending 每日归档</h1>
   <div class="nav">
-    <button id="prev">← 前一天</button>
-    <span class="date" id="dateLabel">—</span>
-    <button id="next">后一天 →</button>
+    <button id="prev" aria-label="前一天">←</button>
+    <input type="date" id="datePicker">
+    <button id="next" aria-label="后一天">→</button>
+  </div>
+  <div class="search">
+    <input type="search" id="searchBox" placeholder="搜索仓库名或描述…" autocomplete="off">
   </div>
 </header>
-<main id="main">
-  <div class="loading">加载中…</div>
-</main>
+<main id="main"><div class="loading">加载中…</div></main>
 <script>
   const main = document.getElementById('main');
-  const dateLabel = document.getElementById('dateLabel');
+  const datePicker = document.getElementById('datePicker');
+  const searchBox = document.getElementById('searchBox');
   let currentDate = null;
+  let currentGroups = [];
 
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
   function fmt(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
@@ -79,9 +79,7 @@
   function shiftDate(s, delta) { const d = parseDate(s); d.setDate(d.getDate() + delta); return fmt(d); }
   function todayStr() { return fmt(new Date()); }
 
-  function escapeHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
+  function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
 
   // 解析数据文件：#### 语言  /  * [title](url):desc
@@ -99,12 +97,41 @@
     return groups;
   }
 
-  function render(date, md) {
-    const groups = parse(md);
-    if (!groups.length) { main.innerHTML = '<div class="error">这一天没有数据</div>'; dateLabel.textContent = date; currentDate = date; return; }
+  // 2026 年在根目录，更早的在年份子目录；两个路径都试
+  async function fetchData(date) {
+    const year = date.slice(0, 4);
+    const paths = ['./' + date + '.md', './' + year + '/' + date + '.md'];
+    for (const p of paths) {
+      try { const r = await fetch(p); if (r.ok) return await r.text(); } catch (e) {}
+    }
+    return null;
+  }
+
+  function render() {
+    const q = searchBox.value.trim().toLowerCase();
+    let groups = currentGroups;
+    let total = 0;
+    if (q) {
+      groups = groups.map(g => {
+        const items = g.items.filter(it =>
+          it.title.toLowerCase().includes(q) || it.desc.toLowerCase().includes(q));
+        total += items.length;
+        return { lang: g.lang, items };
+      }).filter(g => g.items.length > 0);
+    } else {
+      for (const g of groups) total += g.items.length;
+    }
+
+    if (!groups.length) {
+      main.innerHTML = q
+        ? '<div class="empty">没有匹配「' + escapeHtml(q) + '」的仓库</div>'
+        : '<div class="empty">这一天没有数据</div>';
+      return;
+    }
+
     let html = '';
     for (const g of groups) {
-      html += '<section class="lang"><h2>' + escapeHtml(g.lang) + '</h2>';
+      html += '<section class="lang"><h2>' + escapeHtml(g.lang) + ' (' + g.items.length + ')</h2>';
       for (const it of g.items) {
         html += '<a class="item" href="' + escapeAttr(it.url) + '" target="_blank" rel="noopener">'
           + '<div class="repo">' + escapeHtml(it.title) + '</div>'
@@ -113,37 +140,41 @@
       }
       html += '</section>';
     }
+    html += '<div class="count">共 ' + total + ' 个仓库</div>';
     main.innerHTML = html;
-    dateLabel.textContent = date;
-    currentDate = date;
   }
 
   async function load(date) {
     main.innerHTML = '<div class="loading">加载中…</div>';
-    try {
-      const res = await fetch('./' + date + '.md');
-      if (res.ok) { render(date, await res.text()); return; }
-    } catch (e) { /* fall through */ }
-    main.innerHTML = '<div class="error">' + date + ' 暂无数据</div>';
-    dateLabel.textContent = date;
+    const md = await fetchData(date);
+    datePicker.value = date;
     currentDate = date;
+    if (md === null) {
+      currentGroups = [];
+      main.innerHTML = '<div class="error">' + date + ' 暂无数据</div>';
+      return;
+    }
+    currentGroups = parse(md);
+    render();
   }
 
-  // 从今天往前找第一个存在的日期文件
+  // 从今天往前找第一个存在的日期
   async function findLatest() {
     const today = todayStr();
     for (let i = 0; i < 14; i++) {
       const d = shiftDate(today, -i);
-      try {
-        const res = await fetch('./' + d + '.md');
-        if (res.ok) return d;
-      } catch (e) { /* continue */ }
+      if (await fetchData(d) !== null) return d;
     }
     return null;
   }
 
+  datePicker.max = todayStr();
+  datePicker.min = '2015-01-01';
+
   document.getElementById('prev').onclick = () => { if (currentDate) load(shiftDate(currentDate, -1)); };
   document.getElementById('next').onclick = () => { if (currentDate && currentDate < todayStr()) load(shiftDate(currentDate, 1)); };
+  datePicker.onchange = () => { if (datePicker.value) load(datePicker.value); };
+  searchBox.oninput = () => render();
 
   (async function init() {
     const latest = await findLatest();
