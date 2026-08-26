@@ -1,6 +1,8 @@
 # GitHub Trending(Python)
 
 
+> 📱 **在线浏览（手机/网页版，支持按日期浏览与搜索）**：[offddo.github.io/github-trending](https://offddo.github.io/github-trending/)
+
 ## Intro
 Tracking the most popular Github repos, updated daily(Python version)
 
